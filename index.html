@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Pulse | AI News Aggregator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .news-card { transition: all 0.3s ease; }
+        .news-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+        .loader { border-top-color: #3b82f6; animation: spinner 0.6s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        #chatbot-window { transition: transform 0.3s ease, opacity 0.3s ease; }
+        .hidden-chat { transform: translateY(20px); opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body class="text-slate-800 pb-20">
+
+    <!-- Header -->
+    <header class="bg-white border-b sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="bg-blue-600 p-2 rounded-lg text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900">GlobalPulse <span class="text-blue-600">AI</span></h1>
+            </div>
+            <nav id="categories" class="flex flex-wrap justify-center gap-2">
+                <button onclick="fetchNews('google')" class="cat-btn px-4 py-1.5 rounded-full text-sm font-medium bg-blue-100 text-blue-700">Google News</button>
+                <button onclick="fetchNews('tech')" class="cat-btn px-4 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">Technology</button>
+                <button onclick="fetchNews('science')" class="cat-btn px-4 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">Science</button>
+                <button onclick="fetchNews('business')" class="cat-btn px-4 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">Business</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
+            <p class="text-slate-500 font-medium">Analyzing feeds & generating summaries...</p>
+        </div>
+        <div id="news-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-0 transition-opacity duration-500"></div>
+    </main>
+
+    <!-- Chatbot Toggle -->
+    <button onclick="toggleChat()" class="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 z-50 transition-transform active:scale-95">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+    </button>
+
+    <!-- Chatbot Window -->
+    <div id="chatbot-window" class="fixed bottom-24 right-6 w-80 md:w-96 bg-white border rounded-2xl shadow-2xl z-50 hidden-chat flex flex-col overflow-hidden">
+        <div class="bg-blue-600 p-4 text-white flex justify-between items-center">
+            <h3 class="font-bold">Offline AI Summarizer</h3>
+            <button onclick="toggleChat()" class="text-blue-200 hover:text-white">&times;</button>
+        </div>
+        <div id="chat-content" class="p-4 h-64 overflow-y-auto bg-slate-50 text-sm space-y-3">
+            <div class="bg-blue-100 p-2 rounded-lg text-blue-800">Hello! Paste a long article text below, and I will summarize it for you instantly without using any API.</div>
+        </div>
+        <div class="p-4 border-t">
+            <textarea id="chat-input" placeholder="Paste article text here..." class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none h-20 mb-2"></textarea>
+            <button onclick="handleChatSummarize()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 transition">Summarize Text</button>
+        </div>
+    </div>
+
+    <script>
+        const feeds = {
+            google: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',
+            tech: 'https://www.theverge.com/rss/index.xml',
+            science: 'https://www.sciencedaily.com/rss/all.xml',
+            business: 'https://feeds.content.dowjones.io/public/rss/mw_topstories'
+        };
+
+        const RSS_CONVERTER = "https://api.rss2json.com/v1/api.json?rss_url=";
+
+        // --- Summarization Logic (TF-IDF Lite) ---
+        function summarize(text, sentenceCount = 2) {
+            if (!text || text.length < 100) return text;
+            
+            const sentences = text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
+            if (sentences.length <= sentenceCount) return text;
+
+            const wordFreq = {};
+            const words = text.toLowerCase().match(/\w+/g);
+            const stopWords = new Set(['the','is','and','a','to','in','it','of','for','with','on','at','by','from','that']);
+
+            words.forEach(word => {
+                if (!stopWords.has(word)) wordFreq[word] = (wordFreq[word] || 0) + 1;
+            });
+
+            const sentenceScores = sentences.map(s => {
+                let score = 0;
+                const sWords = s.toLowerCase().match(/\w+/g) || [];
+                sWords.forEach(w => { if (wordFreq[w]) score += wordFreq[w]; });
+                return { sentence: s, score: score / (sWords.length + 1) };
+            });
+
+            return sentenceScores
+                .sort((a, b) => b.score - a.score)
+                .slice(0, sentenceCount)
+                .map(s => s.sentence.trim())
+                .join(' ');
+        }
+
+        async function fetchNews(category) {
+            const grid = document.getElementById('news-grid');
+            const loader = document.getElementById('loading');
+            updateNavUI(category);
+            grid.classList.add('opacity-0');
+            loader.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`${RSS_CONVERTER}${encodeURIComponent(feeds[category])}`);
+                const data = await response.json();
+                if (data.status === 'ok') renderArticles(data.items);
+            } catch (error) {
+                console.error("Feed error", error);
+            } finally {
+                loader.classList.add('hidden');
+                grid.classList.remove('opacity-0');
+            }
+        }
+
+        function renderArticles(articles) {
+            const grid = document.getElementById('news-grid');
+            grid.innerHTML = '';
+            articles.forEach(item => {
+                const thumb = item.thumbnail || 'https://images.unsplash.com/photo-1585829365234-784c0c732093?w=800';
+                const cleanDesc = item.description.replace(/<[^>]*>?/gm, '');
+                const summaryText = summarize(cleanDesc);
+
+                grid.insertAdjacentHTML('beforeend', `
+                    <article class="news-card bg-white rounded-xl overflow-hidden border border-slate-200 flex flex-col">
+                        <img src="${thumb}" class="aspect-video object-cover w-full bg-slate-100" onerror="this.src='https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=800'">
+                        <div class="p-5 flex-grow flex flex-col">
+                            <span class="text-xs font-bold text-blue-600 uppercase mb-2">AI Summary</span>
+                            <h3 class="text-lg font-bold text-slate-900 mb-3 leading-snug">
+                                <a href="${item.link}" target="_blank" class="hover:text-blue-600 transition">${item.title}</a>
+                            </h3>
+                            <p class="text-slate-600 text-sm italic mb-4 border-l-2 border-blue-200 pl-3">"${summaryText}..."</p>
+                            <div class="mt-auto pt-4 border-t flex justify-between items-center text-xs text-slate-400">
+                                <span>${item.author || 'News'}</span>
+                                <a href="${item.link}" target="_blank" class="text-blue-600 font-bold">Read Full &rarr;</a>
+                            </div>
+                        </div>
+                    </article>
+                `);
+            });
+        }
+
+        function updateNavUI(active) {
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                const isMatch = btn.getAttribute('onclick').includes(active);
+                btn.className = isMatch ? 'cat-btn px-4 py-1.5 rounded-full text-sm font-medium bg-blue-600 text-white' : 'cat-btn px-4 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100';
+            });
+        }
+
+        // --- Chatbot UI Logic ---
+        function toggleChat() {
+            document.getElementById('chatbot-window').classList.toggle('hidden-chat');
+        }
+
+        function handleChatSummarize() {
+            const input = document.getElementById('chat-input');
+            const content = document.getElementById('chat-content');
+            if (!input.value.trim()) return;
+
+            const userMsg = `<div class="bg-slate-200 p-2 rounded-lg text-right ml-8">Summary requested for text (${input.value.length} chars).</div>`;
+            content.innerHTML += userMsg;
+
+            const result = summarize(input.value, 3);
+            const aiMsg = `<div class="bg-blue-600 text-white p-2 rounded-lg mr-8 font-medium">SUMMARY:<br>${result}</div>`;
+            
+            setTimeout(() => {
+                content.innerHTML += aiMsg;
+                content.scrollTop = content.scrollHeight;
+                input.value = '';
+            }, 500);
+        }
+
+        window.onload = () => fetchNews('google');
+    </script>
+</body>
+</html>
